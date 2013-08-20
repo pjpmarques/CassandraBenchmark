@@ -1,5 +1,5 @@
-CassandraTest 
-=============
+CassandraBenchmark
+==================
 
 Basic performance tests for Cassandra.
 
