@@ -17,9 +17,9 @@ The project is built and run using SBT ([Scala Build Tool](http://www.scala-sbt.
 
 3. Compile by calling `sbt compile`
 
-4. Run with `sbt run`
+4. Run with `sbt run -read -write`
 
-Different test sizes can be specified when running the program.
+Different test sizes can be specified when running the program. For detailed help call `sbt run help`.
 
 
 Sample Result
