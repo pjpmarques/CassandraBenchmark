@@ -14,7 +14,7 @@ libraryDependencies += "org.scalatest" %% "scalatest" % "1.9.1" % "test"
 
 libraryDependencies += "junit" % "junit" % "4.10" % "test"
 
-libraryDependencies += "junit" % "junit" % "4.10" % "test"
-
 libraryDependencies += "com.datastax.cassandra" % "cassandra-driver-core" % "1.0.2"
+
+libraryDependencies += "commons-codec" % "commons-codec" % "1.8"
 
