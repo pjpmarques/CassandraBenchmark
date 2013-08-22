@@ -210,6 +210,8 @@ object CassandraTest  {
   var readTest = true
   var ip = "127.0.0.1"
 
+  //----------------------------------------------------------------------------------------------
+
   def parseCommandLine(args: Array[String]) = {
     val prgOptions = new Options
     prgOptions.addOption("help", false, "help, prints this message")
@@ -242,6 +244,8 @@ object CassandraTest  {
     readTest = cmdOptions hasOption "read"
     writeTest = cmdOptions hasOption "write"
   }
+
+  //----------------------------------------------------------------------------------------------
 
   def main(args: Array[String]) {
     parseCommandLine(args)
