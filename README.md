@@ -31,7 +31,6 @@ Different test sizes can be specified when running the program. Supported option
        -threads <arg>   number of threads to used (default=1)
        -write           write test
 
-
 Sample Result
 =============
     - Doing a simple test for 10,000 insertions.
