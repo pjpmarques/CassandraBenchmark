@@ -8,6 +8,8 @@ import hist.Histogram
 import java.text.SimpleDateFormat
 import java.util.Date
 import org.apache.commons.cli._
+import java.util.concurrent.{TimeUnit, Executors}
+import collection.mutable
 
 /**
  * Benchmarking class for Cassandra.
@@ -15,13 +17,10 @@ import org.apache.commons.cli._
  * @param address The cluster address (IP).
  * @param limit The number of lines to insert into the database.
  */
-class CassandraTest(val address: String, val limit: Int = 10000) {
-  val randomSeed = 595959
+class CassandraTest(val address: String, val limit: Int, val nThreads: Int) {
 
-  //---------------------------------------------------------------------------------
-
-  val cluster = Cluster.builder.addContactPoint(address).build        // Cluster identifier
-  val session = cluster.connect()                                     // Session identifier
+  private val cluster = Cluster.builder.addContactPoint(address).build        // Cluster identifier
+  private val session = cluster.connect()                                     // Session identifier
 
   //---------------------------------------------------------------------------------
 
@@ -31,7 +30,7 @@ class CassandraTest(val address: String, val limit: Int = 10000) {
 
   /** Printout information regarding the test and the cluster **/
   def info(): Unit = {
-    println("  - Doing a simple test for %,d values" format limit)
+    println("  - Doing a simple test for %,d values using %,d threads." format (limit, nThreads))
 
     val metadata = cluster.getMetadata
     println("  - Connected to cluster '%s'." format metadata.getClusterName)
@@ -56,6 +55,61 @@ class CassandraTest(val address: String, val limit: Int = 10000) {
     println("  - Created table 'mytable'.")
   }
 
+  /**
+   * Create 'nConnections' to perform operations on Cassandra.
+   *
+   * @param nConnections Number of requested connections.
+   * @return A sequence with the connections created.
+   */
+  private def createConnections(nConnections: Int): Seq[Session] =
+    Range(0, nConnections).map(_ => cluster.connect())
+
+  /**
+   * Close all the connections to a database.
+   *
+   * @param connections The connections to close.
+   */
+  private def destroyConnections(connections: Seq[Session]): Unit =
+    connections.foreach { _.shutdown() }
+
+  /**
+   * Create prepared statements for inserting data into the database.
+   *
+   * @param connections The connections to be used. The results will be a prepared statement per connection.
+   * @return A stack containging pairs of (Session, PreparedStatement)
+   */
+  private def createStatementsForInsert(connections: Seq[Session]): mutable.Stack[Pair[Session, PreparedStatement]] = {
+    val statements = new mutable.SynchronizedStack[Pair[Session, PreparedStatement]]
+
+    for (connection <- connections) {
+      val insertStm: PreparedStatement = connection.prepare(
+        "INSERT INTO cassandra_test.mytable(id, m01, m02, m03, m04, m05, m06, m07, m08, m09, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24)" +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
+
+      statements push ((connection, insertStm))
+    }
+
+    statements
+  }
+
+  /**
+   * Create prepared statements for reading data from the database.
+   *
+   * @param connections The connections to be used. The results will be a prepared statement per connection.
+   * @return A stack containing pairs of (Session, PreparedStatement)
+   */
+  private def createStatementsForQuerying(connections: Seq[Session]): mutable.Stack[Pair[Session, PreparedStatement]] = {
+    val statements = new mutable.SynchronizedStack[Pair[Session, PreparedStatement]]
+
+    for (connection <- connections) {
+      val selectStm: PreparedStatement = connection.prepare("SELECT * FROM cassandra_test.mytable WHERE id = ?;")
+
+      statements push ((connection, selectStm))
+    }
+
+    statements
+  }
+
     /**
      * Load data into the cluster performing a "write test".
      *
@@ -65,51 +119,39 @@ class CassandraTest(val address: String, val limit: Int = 10000) {
      * @return Array with all the time samples it took to insert the data.
      */
   def writeTest(): Array[Long] = {
+    val connections = createConnections(nThreads)
+    val insertStms = createStatementsForInsert(connections)
+
+    // Results will be collected from all threads that will execute the test without no processing until we're done
     val samples = new Array[Long](limit)
-
-    val randomIds = new util.Random(randomSeed)
-    val random = new util.Random
-    val insertStm = session.prepare(
-      "INSERT INTO cassandra_test.mytable(id, m01, m02, m03, m04, m05, m06, m07, m08, m09, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24)" +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
-
-    println("  - Now inserting data...")
-
-    // Main test phase, do "limit" inserts into the table
-
     val t1 = System.nanoTime
 
-    for (i <- 1 to limit) {
-      val id = randomIds.nextLong.toString
-      val m = new Array[java.lang.Double](24) map { _ => new java.lang.Double(random.nextDouble) }
+    // For load balancing proposes, each chuck of work is about 20% of the whole amount divided by the number of threads
+    val threadPool = Executors.newFixedThreadPool(nThreads)
+    val slice = limit/nThreads/5
 
-      val tA = System.nanoTime
-      val bound = insertStm bind (id, m(0), m(1), m(2), m(3), m(4), m(5), m(6), m(7), m(8), m(9), m(10), m(11), m(12), m(13), m(14), m(15), m(16), m(17), m(18), m(19), m(20), m(21), m(22), m(23))
-      session.execute(bound)
-      val tB = System.nanoTime
-
-      samples(i-1) = tB-tA
-
-      if (i%(limit/20) == 0) {
-        val elapsed = System.nanoTime - t1
-        val throughput = 1.0e9 * i / elapsed
-        println("  - Inserted %,7d elements in %,6.1f sec (%,.0f elem/sec)" format (i, elapsed/1.0e9, throughput))
-      }
+    Range(0, limit, slice) foreach { startIndex =>
+      threadPool execute WriteWorkSlice(startIndex, slice, limit, samples, insertStms)
     }
+    threadPool.shutdown()
+    threadPool.awaitTermination(Long.MaxValue, TimeUnit.NANOSECONDS)
 
     // Test is completed at this point
 
     val t2 = System.nanoTime
-    val throughput = 1.0e9 * limit / (t2 - t1)
 
-    val realTime = samples.sum
-    val realThroughput = 1.0e9 * limit / realTime
+    destroyConnections(connections)
 
-    println("  - Done inserting data. Total Time = %,.0f sec. Total elements = %,d. Throughput = %,.0f elem/sec" format ((t2-t1)/1.0e9, limit, throughput))
-    println("  - Done inserting data. Total Time = %,.0f sec. Total elements = %,d. Throughput = %,.0f elem/sec" format (realTime/1.0e9, limit, realThroughput))
+    val totalEffectivelyInserted = samples.count(_ != 0)
+    val throughput = 1.0e9 * totalEffectivelyInserted / (t2 - t1 + 1)
 
-    // Return the samples
-    samples
+    val realTime = samples.sum + 1
+    val realThroughput = 1.0e9 * totalEffectivelyInserted * nThreads / realTime
+
+    println("  - Done inserting data. Total Time = %,.1f sec. Total elements = %,d. Wall-time Throughput = %,.0f elem/sec. Real Throughput = %,.0f elem/sec" format ((t2-t1)/1.0e9, totalEffectivelyInserted, throughput, realThroughput))
+
+    // Return the samples without the zero elements (which represent errors)
+    samples.filter(_ != 0)
   }
 
   /**
@@ -121,49 +163,39 @@ class CassandraTest(val address: String, val limit: Int = 10000) {
    * @return Array with all the time samples it took to insert the data.
    */
   def readTest(): Array[Long] = {
+    val connections = createConnections(nThreads)
+    val readStms = createStatementsForQuerying(connections)
+
+    // Results will be collected from all threads that will execute the test without no processing until we're done
     val samples = new Array[Long](limit)
-    var totalRead = 0
-
-    val randomIds = new util.Random(randomSeed)
-    val selectStm = session.prepare("SELECT * FROM cassandra_test.mytable WHERE id = ?;")
-
-    println("  - Now reading data...")
-
-    // Main test phase, do "limit" reads from the table
-
     val t1 = System.nanoTime
 
-    for (i <- 1 to limit) {
-      val id = randomIds.nextLong.toString
+    // For load balancing proposes, each chuck of work is about 20% of the whole amount divided by the number of threads
+    val threadPool = Executors.newFixedThreadPool(nThreads)
+    val slice = limit/nThreads/5
 
-      val tA = System.nanoTime
-      val bound = selectStm bind id
-      val result = session.execute(bound)
-      totalRead+= result.all.length
-      val tB = System.nanoTime
-
-      samples(i-1) = tB-tA
-
-      if (i%(limit/20) == 0) {
-        val elapsed = System.nanoTime - t1
-        val throughput = 1.0e9 * i / elapsed
-        println("  - Read %,7d elements out of %,7d tried in %,6.1f sec (%,.0f elem/sec)" format (totalRead, i, elapsed/1.0e9, throughput))
-      }
+    Range(0, limit, slice) foreach { startIndex =>
+      threadPool execute ReadWorkSlice(startIndex, slice, limit, samples, readStms)
     }
+    threadPool.shutdown()
+    threadPool.awaitTermination(Long.MaxValue, TimeUnit.NANOSECONDS)
 
     // Test is completed at this point
 
     val t2 = System.nanoTime
-    val throughput = 1.0e9 * limit / (t2 - t1)
 
-    val realTime = samples.sum
-    val realThroughput = 1.0e9 * limit / realTime
+    destroyConnections(connections)
 
-    println("  - Done reading data. Total Time = %,.0f sec. Total elements = %,d out of %,d tried. Throughput = %,.0f elem/sec" format ((t2-t1)/1.0e9, totalRead, limit, throughput))
-    println("  - Done reading data. Total Time = %,.0f sec. Total elements = %,d out of %,d tried. Throughput = %,.0f elem/sec" format (realTime/1.0e9, totalRead, limit, realThroughput))
+    val totalEffectivelyRead = samples.count(_ != 0)
+    val throughput = 1.0e9 * totalEffectivelyRead / (t2 - t1 + 1)
 
-    // Return the samples
-    samples
+    val realTime = samples.sum + 1
+    val realThroughput = 1.0e9 * totalEffectivelyRead * nThreads / realTime
+
+    println("  - Done querying data. Total Time = %,.1f sec. Total elements = %,d. Wall-time Throughput = %,.0f elem/sec. Real Throughput = %,.0f elem/sec" format ((t2-t1)/1.0e9, totalEffectivelyRead, throughput, realThroughput))
+
+    // Return the samples without the zero elements (which represent errors)
+    samples.filter(_ != 0)
   }
 
   /**
@@ -171,19 +203,21 @@ class CassandraTest(val address: String, val limit: Int = 10000) {
    *
    * @param samples An array containing all the times (in nanosecs) for the performed operations
    * @param fileSufix Suffix to use in the output file
+   * @param dumpToDisk Writes data to disk.
    */
-  def dumpStats(samples: Array[Long], fileSufix: String): Unit = {
+  def stats(samples: Array[Long], fileSufix: String, dumpToDisk: Boolean): Unit = {
     // Write all data into file
 
-    val fileName = new SimpleDateFormat("yyyy-mm-dd_hh:mm:ss").format(new Date) + ("__%s.csv" format fileSufix)
-    println("  - Writing the results into '%s' (%,d lines)" format (fileName, limit))
+    if (dumpToDisk) {
+      val fileName = new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss").format(new Date) + ("__%s.csv" format fileSufix)
+      println("  - Writing the results into '%s' (%,d lines)" format (fileName, limit))
 
-    val pw = new PrintWriter(fileName)
-    samples.foreach { pw.println }
-    pw.close()
+      val pw = new PrintWriter(fileName)
+      samples.foreach { pw.println }
+      pw.close()
+    }
 
     // Show an histogram of the results
-
     val bins = List[Double](0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 10.0, 20.0)
     val histogram = new Histogram(samples.map { _/100000 / 10.0 }.toList, bins)
 
@@ -193,32 +227,39 @@ class CassandraTest(val address: String, val limit: Int = 10000) {
 
   /** Query the database for some ids */
   def simpleQuery(): Unit = {
-    println("  - Getting a few ids: ")
+    print("  - Getting a few ids: ")
 
     val result = session.execute("SELECT id FROM cassandra_test.mytable LIMIT 3;")
-    for (elem <- result) {
-      println("\t %s" format elem.getString(0))
-    }
+    val ids = "[ %s ]" format result.map(_.getString(0)).mkString(" | ")
+    println(ids)
   }
 }
 
 /** Main test driver */
 object CassandraTest  {
-  val defaultTestSize = 10000
-  var limit = defaultTestSize
-  var writeTest = true
-  var readTest = true
-  var ip = "127.0.0.1"
+  private val defaultTestSize = 10000
+  private val defaultThreads = 1
+  private val defaultIP = "127.0.0.1"
+
+  case class TestOptions(
+    limit: Int = defaultTestSize,
+    nThreads: Int = defaultThreads,
+    writeTest: Boolean = true,
+    readTest: Boolean = true,
+    dump: Boolean = false,
+    ip: String = defaultIP)
 
   //----------------------------------------------------------------------------------------------
 
-  def parseCommandLine(args: Array[String]) = {
+  def parseCommandLine(args: Array[String]): TestOptions = {
     val prgOptions = new Options
     prgOptions.addOption("help", false, "help, prints this message")
     prgOptions.addOption("read", false, "read test")
     prgOptions.addOption("write", false, "write test")
+    prgOptions.addOption("dump", false, "dump test results to disk")
     prgOptions.addOption("size", true, "size of the test (default=%,d)" format defaultTestSize)
-    prgOptions.addOption("ip", true, "ip address where cassandra is (default=127.0.0.1)")
+    prgOptions.addOption("threads", true, "number of threads to used (default=%,d)" format defaultThreads)
+    prgOptions.addOption("ip", true, "ip address where cassandra is (default=%s)" format defaultIP)
 
     val cmdOptions = (new GnuParser).parse(prgOptions, args)
 
@@ -233,36 +274,49 @@ object CassandraTest  {
       System.exit(0)
     }
 
-    if (cmdOptions hasOption "size") {
-      limit = (cmdOptions getOptionValue "size").toInt
-    }
+    val limit =
+      if (cmdOptions hasOption "size")
+        (cmdOptions getOptionValue "size").toInt
+      else
+        defaultTestSize
 
-    if (cmdOptions hasOption "ip") {
-      ip = cmdOptions getOptionValue "ip"
-    }
+    val nThreads =
+      if (cmdOptions hasOption "threads")
+        (cmdOptions getOptionValue "threads").toInt
+      else
+        defaultThreads
 
-    readTest = cmdOptions hasOption "read"
-    writeTest = cmdOptions hasOption "write"
+    val ip =
+      if (cmdOptions hasOption "ip")
+        cmdOptions getOptionValue "ip"
+      else
+        defaultIP
+
+    val readTest = cmdOptions hasOption "read"
+    val writeTest = cmdOptions hasOption "write"
+    val dump =  cmdOptions hasOption "dump"
+
+    TestOptions(limit, nThreads, writeTest, readTest, dump, ip)
   }
 
   //----------------------------------------------------------------------------------------------
 
   def main(args: Array[String]) {
-    parseCommandLine(args)
+    val testOptions = parseCommandLine(args)
 
-    val test = new CassandraTest(ip, limit)
+    val test = new CassandraTest(testOptions.ip, testOptions.limit, testOptions.nThreads)
     test.info()
 
-    if (writeTest) {
+    if (testOptions.writeTest) {
       test.createSchema()
       val samples = test.writeTest()
       test.simpleQuery()
-      test.dumpStats(samples, "write_test")
+      test.stats(samples, "wr", testOptions.dump)
     }
 
-    if (readTest) {
+    if (testOptions.readTest) {
       val samples = test.readTest()
-      test.dumpStats(samples, "read_test")
+      test.stats(samples, "rd", testOptions.dump)
     }
 
     test.shutdown()

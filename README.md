@@ -17,9 +17,19 @@ The project is built and run using SBT ([Scala Build Tool](http://www.scala-sbt.
 
 3. Compile by calling `sbt compile`
 
-4. Run with `sbt run`
+4. Call `sbt` and then e.g., `run -read -write -size 100000 -threads 4`
 
-Different test sizes can be specified when running the program.
+Different test sizes can be specified when running the program. Supported options:
+
+    [info] Running db_test.CassandraTest -help
+    usage: CassandraTest [-dump] [-help] [-ip <arg>] [-read] [-size <arg>] [-threads <arg>] [-write]
+       -dump            dump test results to disk
+       -help            help, prints this message
+       -ip <arg>        ip address where cassandra is (default=127.0.0.1)
+       -read            read test
+       -size <arg>      size of the test (default=10,000)
+       -threads <arg>   number of threads to used (default=1)
+       -write           write test
 
 
 Sample Result
