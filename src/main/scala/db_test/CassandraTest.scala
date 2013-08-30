@@ -247,7 +247,8 @@ object CassandraTest  {
     writeTest: Boolean = true,
     readTest: Boolean = true,
     dump: Boolean = false,
-    ip: String = defaultIP)
+    ip: String = defaultIP) {
+  }
 
   //----------------------------------------------------------------------------------------------
 
@@ -261,42 +262,41 @@ object CassandraTest  {
     prgOptions.addOption("threads", true, "number of threads to used (default=%,d)" format defaultThreads)
     prgOptions.addOption("ip", true, "ip address where cassandra is (default=%s)" format defaultIP)
 
-    val cmdOptions = (new GnuParser).parse(prgOptions, args)
+    val cmdOptions: CommandLine = try {
+      (new GnuParser).parse(prgOptions, args)
+    }
+    catch {
+      case optionException: UnrecognizedOptionException => {
+        System.err.println(optionException.getMessage)
+        (new HelpFormatter).printHelp("CassandraTest", prgOptions, true)
+        sys.exit(0)
+      }
+    }
 
     if (cmdOptions.getArgs.length != 0) {
       System.err.println("Invalid option specified.")
       (new HelpFormatter).printHelp("CassandraTest", prgOptions, true)
-      System.exit(0)
+      sys.exit(0)
     }
 
     if (cmdOptions hasOption "help") {
       (new HelpFormatter).printHelp("CassandraTest", prgOptions, true)
-      System.exit(0)
+      sys.exit(0)
     }
 
-    val limit =
-      if (cmdOptions hasOption "size")
-        (cmdOptions getOptionValue "size").toInt
-      else
-        defaultTestSize
+    // Parse all the options into an object by using foldLeft and copying the options one by one
+    val options = (TestOptions() /: cmdOptions.getOptions) { (tstOptions: TestOptions, current: Option) =>
+      current.getOpt match {
+        case "read"     => tstOptions.copy(readTest = true)
+        case "write"    => tstOptions.copy(writeTest = true)
+        case "dump"     => tstOptions.copy(dump = true)
+        case "size"     => tstOptions.copy(limit = current.getValue.toInt)
+        case "threads"  => tstOptions.copy(nThreads = current.getValue.toInt)
+        case "ip"       => tstOptions.copy(ip = current.getValue)
+      }
+    }
 
-    val nThreads =
-      if (cmdOptions hasOption "threads")
-        (cmdOptions getOptionValue "threads").toInt
-      else
-        defaultThreads
-
-    val ip =
-      if (cmdOptions hasOption "ip")
-        cmdOptions getOptionValue "ip"
-      else
-        defaultIP
-
-    val readTest = cmdOptions hasOption "read"
-    val writeTest = cmdOptions hasOption "write"
-    val dump =  cmdOptions hasOption "dump"
-
-    TestOptions(limit, nThreads, writeTest, readTest, dump, ip)
+    options
   }
 
   //----------------------------------------------------------------------------------------------
