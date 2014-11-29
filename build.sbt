@@ -1,5 +1,3 @@
-import AssemblyKeys._ 
-
 name := "CassandraBenchmark"
 
 version := "1.0"
@@ -8,13 +6,14 @@ organization := "pmarques.eu"
 
 version := "1.0.0"
 
-scalaVersion := "2.10.2"
+scalaVersion := "2.11.4"
 
 scalacOptions ++= Seq("-deprecation", "-feature")
 
+
 //---------------------------------------------------------------------------------------
 
-libraryDependencies += "org.scalatest" %% "scalatest" % "1.9.1" % "test"
+libraryDependencies += "org.scalatest" % "scalatest_2.11" % "2.2.1" % "test"
 
 libraryDependencies += "junit" % "junit" % "4.10" % "test"
 
@@ -24,13 +23,14 @@ libraryDependencies += "commons-cli" % "commons-cli" % "1.2"
 
 //---------------------------------------------------------------------------------------
 
-assemblySettings
+// assemblySettings
+// 
 
 mergeStrategy in assembly <<= (mergeStrategy in assembly) { (old) =>
-  {
-    case PathList("javax", "servlet", xs @ _*)         => MergeStrategy.first
-    case x => old(x)
-  }
+	{
+		case PathList("javax", "servlet", xs @ _*)         => MergeStrategy.first
+		case x => old(x)
+	}
 }
 
 jarName in assembly := "CassandraBenchmark.jar"
