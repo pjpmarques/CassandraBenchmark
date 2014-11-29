@@ -16,16 +16,16 @@ abstract class WorkSlice extends Runnable
  * not be done past 'limit'.
  *
  * 'samples' represent an array that needs to be updated with the number of nanoseconds it took to do each insert.
- * 'dbStms' represent a pair of session/prepared statement to be used to insert into cassandra. The thread needs
+ * 'dbStms' represent a Tuple2 of session/prepared statement to be used to insert into cassandra. The thread needs
  * to take on of these out and but it back in at the end.
  *
  * @param start The start index of the data to insert into cassandra.
  * @param slice How much data to insert into cassandra
  * @param limit The upper limit for the data to insert (i.e., the top bound of the buffer)
  * @param samples Array to where the time samples of the inserts must be stored
- * @param dbStms Pair[Session, PreparedStatement] from where to use cassandra
+ * @param dbStms Tuple2[Session, PreparedStatement] from where to use cassandra
  */
-case class WriteWorkSlice(start: Int, slice: Int, limit: Int, samples: Array[Long], dbStms: mutable.Stack[Pair[Session, PreparedStatement]]) extends WorkSlice  {
+case class WriteWorkSlice(start: Int, slice: Int, limit: Int, samples: Array[Long], dbStms: mutable.Stack[Tuple2[Session, PreparedStatement]]) extends WorkSlice  {
   def run(): Unit = {
     // Get a session and prepared statement to use with cassandra
     val (thisSession, insertStm) = dbStms.pop()
@@ -72,15 +72,15 @@ case class WriteWorkSlice(start: Int, slice: Int, limit: Int, samples: Array[Lon
  * Class that represents a piece of work to be done by a thread when reading data from Cassandra.
  *
  * 'samples' represent an array that needs to be updated with the number of nanoseconds it took to do each insert.
- * 'dbStms' represent a pair of session/prepared statement to be used to read data from cassandra. The thread needs
+ * 'dbStms' represent a Tuple2 of session/prepared statement to be used to read data from cassandra. The thread needs
  * to take on of these out and but it back in at the end.
  *
  * @param slice How much data to read from Cassandra.
  * @param limit The upper limit for the identifiers that were inserted.
  * @param samples Array to where the time samples of the inserts must be stored
- * @param dbStms Pair[Session, PreparedStatement] from where to use cassandra
+ * @param dbStms Tuple2[Session, PreparedStatement] from where to use cassandra
  */
-case class ReadWorkSlice(start: Int, slice: Int, limit: Int, samples: Array[Long], dbStms: mutable.Stack[Pair[Session, PreparedStatement]]) extends WorkSlice {
+case class ReadWorkSlice(start: Int, slice: Int, limit: Int, samples: Array[Long], dbStms: mutable.Stack[Tuple2[Session, PreparedStatement]]) extends WorkSlice {
   def run(): Unit = {
     // Get a session and prepared statement to use with cassandra
     val (thisSession, readStm) = dbStms.pop()

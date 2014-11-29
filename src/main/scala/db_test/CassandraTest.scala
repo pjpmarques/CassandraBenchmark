@@ -76,10 +76,10 @@ class CassandraTest(val address: String, val limit: Int, val nThreads: Int) {
    * Create prepared statements for inserting data into the database.
    *
    * @param connections The connections to be used. The results will be a prepared statement per connection.
-   * @return A stack containging pairs of (Session, PreparedStatement)
+   * @return A stack containging Tuple2s of (Session, PreparedStatement)
    */
-  private def createStatementsForInsert(connections: Seq[Session]): mutable.Stack[Pair[Session, PreparedStatement]] = {
-    val statements = new mutable.SynchronizedStack[Pair[Session, PreparedStatement]]
+  private def createStatementsForInsert(connections: Seq[Session]): mutable.Stack[Tuple2[Session, PreparedStatement]] = {
+    val statements = new scala.collection.mutable.Stack[Tuple2[Session, PreparedStatement]]
 
     for (connection <- connections) {
       val insertStm: PreparedStatement = connection.prepare(
@@ -96,10 +96,10 @@ class CassandraTest(val address: String, val limit: Int, val nThreads: Int) {
    * Create prepared statements for reading data from the database.
    *
    * @param connections The connections to be used. The results will be a prepared statement per connection.
-   * @return A stack containing pairs of (Session, PreparedStatement)
+   * @return A stack containing Tuple2s of (Session, PreparedStatement)
    */
-  private def createStatementsForQuerying(connections: Seq[Session]): mutable.Stack[Pair[Session, PreparedStatement]] = {
-    val statements = new mutable.SynchronizedStack[Pair[Session, PreparedStatement]]
+  private def createStatementsForQuerying(connections: Seq[Session]): mutable.Stack[Tuple2[Session, PreparedStatement]] = {
+    val statements = new scala.collection.mutable.Stack[Tuple2[Session, PreparedStatement]]
 
     for (connection <- connections) {
       val selectStm: PreparedStatement = connection.prepare("SELECT * FROM cassandra_test.mytable WHERE id = ?;")
