@@ -26,7 +26,7 @@ class CassandraTest(val address: String, val limit: Int, val nThreads: Int) {
 
   /** Shutdown the cluster */
   def shutdown(): Unit =
-    cluster.shutdown()
+    cluster.close()
 
   /** Printout information regarding the test and the cluster **/
   def info(): Unit = {
@@ -70,7 +70,7 @@ class CassandraTest(val address: String, val limit: Int, val nThreads: Int) {
    * @param connections The connections to close.
    */
   private def destroyConnections(connections: Seq[Session]): Unit =
-    connections.foreach { _.shutdown() }
+    connections.foreach { _.close() }
 
   /**
    * Create prepared statements for inserting data into the database.
