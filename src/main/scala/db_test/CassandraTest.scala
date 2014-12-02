@@ -110,14 +110,14 @@ class CassandraTest(val address: String, val limit: Int, val nThreads: Int) {
     statements
   }
 
-    /**
-     * Load data into the cluster performing a "write test".
-     *
-     * The test consists in inserting a certain number of lines where each line consists in an identifier and 24 measures (doubles).
-     * All times are recorded so that detailed statistics can be calculated (return of the function).
-     *
-     * @return Array with all the time samples it took to insert the data.
-     */
+  /**
+   * Load data into the cluster performing a "write test".
+   *
+   * The test consists in inserting a certain number of lines where each line consists in an identifier and 24 measures (doubles).
+   * All times are recorded so that detailed statistics can be calculated (return of the function).
+   *
+   * @return Array with all the time samples it took to insert the data.
+   */
   def writeTest(): Array[Long] = {
     val connections = createConnections(nThreads)
     val insertStms = createStatementsForInsert(connections)
